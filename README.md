@@ -499,7 +499,7 @@ docker compose logs -f node-1 node-3
 
 | Resource | URL |
 |---|---|
-| GitHub Repository | `https://github.com/[USERNAME]/distributed-sync-system` |
+| GitHub Repository | `https://github.com/HanAjaa61/Distributed-Synchronization-System-Menggunakan-Algoritma-Raft-Consensus` |
 
 ---
 
