@@ -1,0 +1,170 @@
+version: "3.9"
+
+# Distributed Sync System — 3-node cluster + Redis
+# Usage: docker-compose up --scale node=3 (or use fixed node configs below)
+
+networks:
+  cluster-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  redis-data:
+  node1-data:
+  node2-data:
+  node3-data:
+
+services:
+  # ─────────────── Redis (shared distributed state) ───────────────
+  redis:
+    image: redis:7-alpine
+    container_name: dist-sync-redis
+    networks:
+      cluster-net:
+        ipv4_address: 172.20.0.10
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "6379:6379"
+
+  # ─────────────── Node 1 (initial candidate) ─────────────────────
+  node-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.node
+    container_name: dist-sync-node-1
+    networks:
+      cluster-net:
+        ipv4_address: 172.20.0.11
+    environment:
+      - NODE_ID=node-1
+      - NODE_HOST=0.0.0.0
+      - NODE_PORT=8001
+      - CLUSTER_NODES=172.20.0.11:8001,172.20.0.12:8002,172.20.0.13:8003
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RAFT_ELECTION_TIMEOUT_MIN=150
+      - RAFT_ELECTION_TIMEOUT_MAX=300
+      - RAFT_HEARTBEAT_INTERVAL=50
+      - QUEUE_PARTITIONS=16
+      - CACHE_MAX_SIZE=10000
+      - CACHE_REPLACEMENT_POLICY=LRU
+      - LOG_LEVEL=INFO
+    volumes:
+      - node1-data:/data
+    ports:
+      - "8001:8001"
+      - "9091:9090"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ─────────────── Node 2 ──────────────────────────────────────────
+  node-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.node
+    container_name: dist-sync-node-2
+    networks:
+      cluster-net:
+        ipv4_address: 172.20.0.12
+    environment:
+      - NODE_ID=node-2
+      - NODE_HOST=0.0.0.0
+      - NODE_PORT=8002
+      - CLUSTER_NODES=172.20.0.11:8001,172.20.0.12:8002,172.20.0.13:8003
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RAFT_ELECTION_TIMEOUT_MIN=150
+      - RAFT_ELECTION_TIMEOUT_MAX=300
+      - RAFT_HEARTBEAT_INTERVAL=50
+      - QUEUE_PARTITIONS=16
+      - CACHE_MAX_SIZE=10000
+      - CACHE_REPLACEMENT_POLICY=LRU
+      - LOG_LEVEL=INFO
+    volumes:
+      - node2-data:/data
+    ports:
+      - "8002:8002"
+      - "9092:9090"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ─────────────── Node 3 ──────────────────────────────────────────
+  node-3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.node
+    container_name: dist-sync-node-3
+    networks:
+      cluster-net:
+        ipv4_address: 172.20.0.13
+    environment:
+      - NODE_ID=node-3
+      - NODE_HOST=0.0.0.0
+      - NODE_PORT=8003
+      - CLUSTER_NODES=172.20.0.11:8001,172.20.0.12:8002,172.20.0.13:8003
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RAFT_ELECTION_TIMEOUT_MIN=150
+      - RAFT_ELECTION_TIMEOUT_MAX=300
+      - RAFT_HEARTBEAT_INTERVAL=50
+      - QUEUE_PARTITIONS=16
+      - CACHE_MAX_SIZE=10000
+      - CACHE_REPLACEMENT_POLICY=LRU
+      - LOG_LEVEL=INFO
+    volumes:
+      - node3-data:/data
+    ports:
+      - "8003:8003"
+      - "9093:9090"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ─────────────── Load Balancer (nginx) ──────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: dist-sync-lb
+    networks:
+      cluster-net:
+        ipv4_address: 172.20.0.20
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - node-1
+      - node-2
+      - node-3
+    restart: unless-stopped

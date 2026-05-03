@@ -1,0 +1,5 @@
+Method,Name,Error,Occurrences
+GET,/full-tx/cache-read,HTTPError('404 Client Error: Not Found for url: /full-tx/cache-read'),8
+POST,/queue/consume,CatchResponseError('HTTP 500'),40
+POST,/queue/produce,CatchResponseError('HTTP 500'),75
+POST,/full-tx/queue-produce,HTTPError('500 Server Error: Internal Server Error for url: /full-tx/queue-produce'),8
